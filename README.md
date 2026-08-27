@@ -1,719 +1,364 @@
-# FastAPI Todo API
+# FastAPI Todo — Sync vs Async SQLite
 
-Một REST API quản lý công việc đơn giản được xây dựng bằng **FastAPI**, **Pydantic v2** và **SQLite**.
+Project này dùng để chạy và so sánh hai phiên bản FastAPI:
 
-Project này dùng để thực hành các kiến thức backend cơ bản như:
-
-- CRUD
-- Validation dữ liệu với Pydantic
-- Dependency Injection với `Depends`
-- SQLite
-- Lifespan
-- CORS Middleware
-- Liveness và Readiness Health Check
+- `sync_main.py`: dùng `sqlite3` + endpoint `def`
+- `async_main.py`: dùng `aiosqlite` + `async def` / `await`
+- `benchmark.py`: gửi nhiều request để so sánh hiệu năng
 
 ---
 
-## Tính năng
+## 1. Chạy ứng dụng
 
-- Tạo Todo mới
-- Lấy danh sách toàn bộ Todo
-- Lấy chi tiết Todo theo ID
-- Cập nhật Todo
-- Xóa Todo
-- Validation dữ liệu đầu vào
-- Lưu dữ liệu bằng SQLite
-- Quản lý kết nối database bằng `Depends`
-- Khởi tạo database bằng `lifespan`
-- Cấu hình CORS
-- Health check với `/health/live` và `/health/ready`
+### Linux / WSL
 
----
+Mở 2 terminal.
 
-## Công nghệ sử dụng
-
-- Python
-- FastAPI
-- Pydantic v2
-- SQLite
-- Uvicorn
-
----
-
-## Cấu trúc project
-
-```text
-.
-├── main.py
-├── todos.db
-└── README.md
-```
-
-> `todos.db` sẽ được tạo tự động khi ứng dụng khởi động nếu file chưa tồn tại.
-
----
-
-# Cài đặt
-
-## 1. Clone repository
+**Terminal 1 — Sync**
 
 ```bash
-git clone <repository-url>
-cd <repository-folder>
+uv run uvicorn sync_main:app --port 8000
 ```
 
----
-
-## 2. Cài dependencies
-
-Cài trực tiếp các thư viện cần thiết trên máy:
-
-### Windows
-
-```powershell
-pip install fastapi uvicorn
-```
-
-Nếu máy có nhiều phiên bản Python, có thể dùng:
-
-```powershell
-python -m pip install fastapi uvicorn
-```
-
-### Linux / WSL / macOS
-
-```bash
-pip install fastapi uvicorn
-```
-
-Nếu cần:
-
-```bash
-python3 -m pip install fastapi uvicorn
-```
-
----
-
-# Chạy ứng dụng
-
-Giả sử file FastAPI của project là:
-
-```text
-main.py
-```
-
-Chạy server bằng:
-
-### Windows
-
-```powershell
-uvicorn main:app --reload
-```
-
-### Linux / WSL / macOS
-
-```bash
-uvicorn main:app --reload
-```
-
-Nếu chạy thành công, API mặc định có địa chỉ:
+Ứng dụng sync chạy tại:
 
 ```text
 http://127.0.0.1:8000
 ```
 
----
-
-# API Documentation
-
-FastAPI tự động sinh tài liệu API.
-
-Swagger UI:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-OpenAPI JSON:
-
-```text
-http://127.0.0.1:8000/openapi.json
-```
-
----
-
-# API Endpoints
-
-| Method | Endpoint | Chức năng |
-|---|---|---|
-| GET | `/` | Kiểm tra API cơ bản |
-| POST | `/todos` | Tạo Todo mới |
-| GET | `/todos` | Lấy toàn bộ Todo |
-| GET | `/todos/{todo_id}` | Lấy Todo theo ID |
-| PUT | `/todos/{todo_id}` | Cập nhật Todo |
-| DELETE | `/todos/{todo_id}` | Xóa Todo |
-| GET | `/health/live` | Liveness check |
-| GET | `/health/ready` | Readiness check |
-
----
-
-# Todo Schema
-
-Request body có dạng:
-
-```json
-{
-  "Title": "Hoc FastAPI",
-  "Description": "Hoc CRUD voi SQLite",
-  "Priority": 3,
-  "Completed": false
-}
-```
-
-| Field | Kiểu dữ liệu | Bắt buộc | Mặc định |
-|---|---|---|---|
-| `Title` | `str` | Có | - |
-| `Description` | `str \| null` | Không | `null` |
-| `Priority` | `int` | Không | `1` |
-| `Completed` | `bool` | Không | `false` |
-
----
-
-# Validation
-
-## Title
-
-`Title` không được để trống hoặc chỉ chứa khoảng trắng.
-
-Không hợp lệ:
-
-```json
-{
-  "Title": "   "
-}
-```
-
-Hợp lệ:
-
-```json
-{
-  "Title": "Hoc FastAPI"
-}
-```
-
-Khoảng trắng ở đầu và cuối `Title` sẽ được loại bỏ bằng:
-
-```python
-return value.strip()
-```
-
----
-
-## Priority và Description
-
-Khi:
-
-```text
-Priority >= 4
-```
-
-thì `Description` bắt buộc phải có.
-
-Không hợp lệ:
-
-```json
-{
-  "Title": "Task quan trong",
-  "Priority": 5
-}
-```
-
-Hợp lệ:
-
-```json
-{
-  "Title": "Task quan trong",
-  "Description": "Phai hoan thanh som",
-  "Priority": 5
-}
-```
-
----
-
-# Test API bằng curl
-
-Đảm bảo FastAPI đang chạy trước khi test:
+**Terminal 2 — Async**
 
 ```bash
-uvicorn main:app --reload
+uv run uvicorn async_main:app --port 8001
 ```
 
-Sau đó mở một terminal khác để chạy `curl`.
+Ứng dụng async chạy tại:
 
----
-
-## 1. GET root
-
-Lệnh này có thể dùng trên cả Windows và Linux:
-
-```bash
-curl http://127.0.0.1:8000/
+```text
+http://127.0.0.1:8001
 ```
-
-Response:
-
-```json
-{
-  "message": "Hello fastapi"
-}
-```
-
----
-
-## 2. POST - Tạo Todo
 
 ### Windows PowerShell
 
+Mở 2 cửa sổ PowerShell.
+
+**PowerShell 1 — Sync**
+
 ```powershell
-curl.exe -X POST `
-  http://127.0.0.1:8000/todos `
-  -H "Content-Type: application/json" `
-  -d "{\"Title\":\"Hoc FastAPI\",\"Description\":\"Hoc CRUD\",\"Priority\":3,\"Completed\":false}"
+uv run uvicorn sync_main:app --port 8000
 ```
 
-### Linux / WSL / macOS
+**PowerShell 2 — Async**
 
-```bash
-curl -X POST \
-  http://127.0.0.1:8000/todos \
-  -H "Content-Type: application/json" \
-  -d '{
-    "Title": "Hoc FastAPI",
-    "Description": "Hoc CRUD",
-    "Priority": 3,
-    "Completed": false
-  }'
-```
-
-Response hiện tại:
-
-```json
-{
-  "message": "Cretae sucessully"
-}
+```powershell
+uv run uvicorn async_main:app --port 8001
 ```
 
 ---
 
-## 3. GET - Lấy toàn bộ Todo
+## 2. Test API bằng curl
 
-Có thể dùng trên cả Windows và Linux:
+Các lệnh bên dưới test bản **sync** ở port `8000`.
+
+Muốn test bản **async**, chỉ cần đổi:
+
+```text
+8000 -> 8001
+```
+
+### Linux / WSL
+
+#### GET danh sách Todo
 
 ```bash
 curl http://127.0.0.1:8000/todos
 ```
 
-Ví dụ response:
-
-```json
-[
-  {
-    "Id": 1,
-    "Title": "Hoc FastAPI",
-    "Description": "Hoc CRUD",
-    "Priority": 3,
-    "Completed": 0
-  }
-]
-```
-
-> SQLite lưu boolean dưới dạng số nguyên: `false = 0`, `true = 1`.
-
----
-
-## 4. GET - Lấy Todo theo ID
+#### GET một Todo
 
 ```bash
 curl http://127.0.0.1:8000/todos/1
 ```
 
-Ví dụ response:
-
-```json
-{
-  "Id": 1,
-  "Title": "Hoc FastAPI",
-  "Description": "Hoc CRUD",
-  "Priority": 3,
-  "Completed": 0
-}
-```
-
-Nếu không tìm thấy:
-
-```json
-{
-  "message": "Todo not found"
-}
-```
-
----
-
-## 5. PUT - Cập nhật Todo
-
-### Windows PowerShell
-
-```powershell
-curl.exe -X PUT `
-  http://127.0.0.1:8000/todos/1 `
-  -H "Content-Type: application/json" `
-  -d "{\"Title\":\"Hoc FastAPI nang cao\",\"Description\":\"Hoc PUT\",\"Priority\":4,\"Completed\":true}"
-```
-
-### Linux / WSL / macOS
+#### POST tạo Todo
 
 ```bash
-curl -X PUT \
-  http://127.0.0.1:8000/todos/1 \
+curl -X POST http://127.0.0.1:8000/todos \
   -H "Content-Type: application/json" \
   -d '{
-    "Title": "Hoc FastAPI nang cao",
-    "Description": "Hoc PUT",
-    "Priority": 4,
+    "Title": "Lam FastAPI",
+    "Description": "Hoc sync va async",
+    "Priority": 3,
+    "Completed": false
+  }'
+```
+
+#### PUT cập nhật Todo
+
+```bash
+curl -X PUT http://127.0.0.1:8000/todos/1 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "Title": "Lam FastAPI",
+    "Description": "Da cap nhat",
+    "Priority": 2,
     "Completed": true
   }'
 ```
 
-Response:
-
-```json
-{
-  "message": "Updated successfully"
-}
-```
-
----
-
-## 6. DELETE - Xóa Todo
-
-Lệnh này có thể dùng trên cả Windows và Linux:
+#### DELETE Todo
 
 ```bash
 curl -X DELETE http://127.0.0.1:8000/todos/1
 ```
 
-Response:
-
-```json
-{
-  "message": "Deleted successfully"
-}
-```
-
----
-
-# Database
-
-Project sử dụng SQLite với file:
-
-```text
-todos.db
-```
-
-Table được tạo bằng:
-
-```sql
-CREATE TABLE IF NOT EXISTS ToDos(
-    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-    Title TEXT NOT NULL,
-    Description TEXT,
-    Priority INTEGER NOT NULL,
-    Completed INTEGER NOT NULL
-);
-```
-
-Database được tạo khi ứng dụng startup thông qua `lifespan`.
-
----
-
-# Dependency Injection
-
-Database connection được truyền vào endpoint bằng:
-
-```python
-Depends(get_db)
-```
-
-Flow:
-
-```text
-Request
-   ↓
-FastAPI
-   ↓
-Depends(get_db)
-   ↓
-Mở SQLite connection
-   ↓
-yield connection
-   ↓
-Endpoint xử lý request
-   ↓
-Request kết thúc
-   ↓
-finally
-   ↓
-Đóng connection
-```
-
----
-
-# CORS
-
-Project sử dụng `CORSMiddleware`:
-
-```python
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
-```
-
-Cấu hình hiện tại:
-
-- Cho phép mọi origin
-- Cho phép mọi HTTP method
-- Cho phép mọi request header
-- Không cho phép credentials
-
-Trong môi trường production nên giới hạn `allow_origins` về các frontend được tin cậy.
-
----
-
-# Health Check
-
-## Liveness
-
-Endpoint:
-
-```text
-GET /health/live
-```
-
-Test:
+#### Liveness
 
 ```bash
 curl http://127.0.0.1:8000/health/live
 ```
 
-Response:
-
-```json
-{
-  "status": "alive"
-}
-```
-
-Liveness dùng để kiểm tra ứng dụng có đang chạy hay không.
-
----
-
-## Readiness
-
-Endpoint:
-
-```text
-GET /health/ready
-```
-
-Test:
+#### Readiness
 
 ```bash
 curl http://127.0.0.1:8000/health/ready
 ```
 
-Response:
+---
 
-```json
-{
-  "status": "ready"
-}
+### Windows PowerShell
+
+Nên dùng `curl.exe` để chắc chắn gọi đúng chương trình curl của Windows.
+
+#### GET danh sách Todo
+
+```powershell
+curl.exe http://127.0.0.1:8000/todos
 ```
 
-Readiness thực hiện:
+#### GET một Todo
 
-```sql
-SELECT 1
+```powershell
+curl.exe http://127.0.0.1:8000/todos/1
 ```
 
-để kiểm tra database có thể được truy cập.
+#### POST tạo Todo
 
-Có thể hiểu:
+```powershell
+curl.exe -X POST http://127.0.0.1:8000/todos `
+  -H "Content-Type: application/json" `
+  -d '{"Title":"Lam FastAPI","Description":"Hoc sync va async","Priority":3,"Completed":false}'
+```
+
+#### PUT cập nhật Todo
+
+```powershell
+curl.exe -X PUT http://127.0.0.1:8000/todos/1 `
+  -H "Content-Type: application/json" `
+  -d '{"Title":"Lam FastAPI","Description":"Da cap nhat","Priority":2,"Completed":true}'
+```
+
+#### DELETE Todo
+
+```powershell
+curl.exe -X DELETE http://127.0.0.1:8000/todos/1
+```
+
+#### Liveness
+
+```powershell
+curl.exe http://127.0.0.1:8000/health/live
+```
+
+#### Readiness
+
+```powershell
+curl.exe http://127.0.0.1:8000/health/ready
+```
+
+---
+
+## 3. So sánh Sync và Async
+
+Chạy cả hai server trước:
 
 ```text
-Liveness
-    ↓
-Ứng dụng còn sống không?
-
-Readiness
-    ↓
-Ứng dụng đã sẵn sàng phục vụ request chưa?
+Sync  -> http://127.0.0.1:8000
+Async -> http://127.0.0.1:8001
 ```
 
----
+Sau đó chạy benchmark.
 
-# Random Test Data
-
-Project có hàm:
-
-```python
-add_random_todos()
-```
-
-để thêm 5 Todo ngẫu nhiên.
-
-Hiện tại đang bị comment:
-
-```python
-# add_random_todos()
-```
-
-Nếu bật lại:
-
-```python
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    create_db()
-    add_random_todos()
-    yield
-```
-
-thì mỗi lần ứng dụng startup sẽ thêm 5 record mới.
-
----
-
-# Reset dữ liệu
-
-Xóa toàn bộ Todo:
-
-```sql
-DELETE FROM ToDos;
-```
-
-Reset `AUTOINCREMENT`:
-
-```sql
-DELETE FROM ToDos;
-DELETE FROM sqlite_sequence WHERE name = 'ToDos';
-```
-
-Sau đó Todo mới sẽ bắt đầu lại từ:
-
-```text
-Id = 1
-```
-
----
-
-# Khác biệt curl giữa Windows và Linux
-
-Với lệnh `curl` đơn giản:
+### Linux / WSL
 
 ```bash
-curl http://127.0.0.1:8000/todos
+uv run python benchmark.py
 ```
 
-có thể dùng gần như giống nhau.
+### Windows PowerShell
 
-Điểm khác biệt chính khi viết lệnh nhiều dòng:
+```powershell
+uv run python benchmark.py
+```
 
-| Môi trường | Ký tự xuống dòng |
-|---|---|
-| Windows PowerShell | `` ` `` |
-| Linux / WSL / macOS | `\` |
-| Windows CMD | `^` |
+### Ý nghĩa các thông số
 
-Trong README này sử dụng:
+- `Total requests`: tổng số request gửi đi.
+- `Concurrency`: số request tối đa được chạy đồng thời tại một thời điểm.
+- `Success`: số request thành công.
+- `Errors`: số request bị lỗi.
+- `Average response`: thời gian phản hồi trung bình.
+- `Requests / second`: số request xử lý được trong một giây.
 
-- **Windows PowerShell** cho Windows
-- **Bash** cho Linux / WSL / macOS
+### Một số kết quả benchmark ổn định
 
----
+| Concurrency | SQLite3 Sync | aiosqlite Async |
+|---:|---:|---:|
+| 10 | 42.50 req/s | 45.40 req/s |
+| 10 | 35.60 req/s | 44.47 req/s |
+| 20 | 40.67 req/s | 41.67 req/s |
+| 50 | 38.16 req/s | 48.48 req/s |
+| 50 | 50.92 req/s | 53.12 req/s |
+| 50 | 44.77 req/s | 48.84 req/s |
 
-# Một số điểm có thể cải thiện
+Trong các lần chạy ổn định, `aiosqlite` thường có throughput cao hơn `sqlite3`.
 
-Project hiện tại phục vụ mục đích học tập.
+Tuy nhiên, async không có nghĩa là mọi request luôn chạy nhanh hơn sync. Lợi ích chính của async là khi chương trình phải chờ I/O, `await` cho phép event loop chuyển sang xử lý coroutine khác thay vì giữ luồng chờ.
 
-Có thể cải thiện thêm:
+Với bài này, SQLite chạy local và câu query khá nhẹ nên mức chênh lệch giữa sync và async không quá lớn.
 
-- Trả `404 Not Found` bằng `HTTPException`
-- Tạo schema riêng cho update
-- Thêm `PATCH`
-- Thêm pagination
-- Thêm filter
-- Thêm test với `pytest`
-- Thêm logging
-- Thêm Docker
-- Giới hạn CORS origin khi deploy production
+## 4. Cách dùng `benchmark.py`
 
-Ví dụ thay:
+`benchmark.py` dùng để gửi nhiều request tới cả hai server và so sánh hiệu năng giữa:
+
+```text
+SQLite3 Sync    -> http://127.0.0.1:8000
+Aiosqlite Async -> http://127.0.0.1:8001
+```
+
+### Bước 1 — Chạy server Sync
+
+Linux / WSL:
+
+```bash
+uv run uvicorn sync_main:app --port 8000
+```
+
+Windows PowerShell:
+
+```powershell
+uv run uvicorn sync_main:app --port 8000
+```
+
+### Bước 2 — Chạy server Async
+
+Mở terminal khác.
+
+Linux / WSL:
+
+```bash
+uv run uvicorn async_main:app --port 8001
+```
+
+Windows PowerShell:
+
+```powershell
+uv run uvicorn async_main:app --port 8001
+```
+
+### Bước 3 — Chạy benchmark
+
+Mở terminal thứ ba.
+
+Linux / WSL:
+
+```bash
+uv run python benchmark.py
+```
+
+Windows PowerShell:
+
+```powershell
+uv run python benchmark.py
+```
+
+### Chỉnh số request và concurrency
+
+Trong `benchmark.py`, phần gọi hàm thường có dạng:
 
 ```python
-if row == None:
-    return {"message": "Todo not found"}
+await benchmark(
+    name="SQLite3 Sync",
+    url="http://127.0.0.1:8000/todos",
+    total_requests=100,
+    concurrency=10
+)
 ```
 
-bằng:
+và:
 
 ```python
-from fastapi import HTTPException
-
-if row is None:
-    raise HTTPException(
-        status_code=404,
-        detail="Todo not found"
-    )
+await benchmark(
+    name="Aiosqlite Async",
+    url="http://127.0.0.1:8001/todos",
+    total_requests=100,
+    concurrency=10
+)
 ```
 
----
+Trong đó:
 
-# Ghi chú
+- `total_requests=100`: tổng cộng gửi 100 request.
+- `concurrency=10`: tối đa 10 request chạy đồng thời tại một thời điểm.
 
-Trong code hiện tại:
+Ví dụ muốn tăng tải:
 
 ```python
-if self.Priority >= 4 and not self.Description:
+total_requests=100
+concurrency=50
 ```
 
-nhưng message validation lại ghi:
+hoặc:
+
+```python
+total_requests=100
+concurrency=100
+```
+
+Nên giữ cùng `total_requests` và `concurrency` cho cả Sync và Async để so sánh công bằng.
+
+### Ví dụ kết quả
 
 ```text
-Priority > 4
+==============================
+SQLite3 Sync
+==============================
+Total requests       : 100
+Concurrency          : 10
+Success              : 100
+Errors               : 0
+Total time           : 2.353 s
+Average response     : 0.213 s
+Requests / second    : 42.50
+
+==============================
+Aiosqlite Async
+==============================
+Total requests       : 100
+Concurrency          : 10
+Success              : 100
+Errors               : 0
+Total time           : 2.203 s
+Average response     : 0.206 s
+Requests / second    : 45.40
 ```
 
-Điều kiện thực tế là:
+Khi đọc kết quả:
 
-```text
-Priority >= 4
-```
+- `Success` càng gần `Total requests` càng tốt.
+- `Errors` nên bằng `0`.
+- `Total time` càng thấp càng tốt.
+- `Average response` càng thấp càng tốt.
+- `Requests / second` càng cao càng tốt.
 
-Ngoài ra:
-
-```text
-Cretae sucessully
-```
-
-có thể sửa thành:
-
-```text
-Created successfully
-```
-
----
-
-# License
-
-Project được sử dụng cho mục đích học tập và thực hành.
+Nên chạy benchmark nhiều lần với cùng cấu hình rồi so sánh các kết quả ổn định, thay vì kết luận từ một lần chạy duy nhất.
